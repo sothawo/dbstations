@@ -15,15 +15,14 @@
 */
 package com.sothawo.dbstations;
 
-import javafx.application.Application;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchDataAutoConfiguration;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.geo.GeoBox;
+import org.springframework.data.elasticsearch.repository.ElasticsearchRepository;
 
-@SpringBootApplication(exclude = ElasticsearchDataAutoConfiguration.class)
-public class DBStationsApplication {
+public interface DBStationRepository extends ElasticsearchRepository<DBStation, Integer> {
 
-    public static void main(String[] args) {
-        Application.launch(SpringbootJavaFxApplication.class, args);
-    }
+    SearchHits<DBStation> searchTop5By(Sort sort);
 
+    SearchHits<DBStation> searchByLocationNear(GeoBox geoBox);
 }

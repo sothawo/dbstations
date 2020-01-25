@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.elasticsearch.client.ClientConfiguration;
 import org.springframework.data.elasticsearch.client.RestClients;
 import org.springframework.data.elasticsearch.config.AbstractElasticsearchConfiguration;
+import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 
@@ -30,16 +31,24 @@ import java.time.Duration;
 @Configuration
 public class ElasticsearchConfiguration extends AbstractElasticsearchConfiguration {
 
+    private final DBStationsConfiguration dbStationsConfiguration;
+
+    public ElasticsearchConfiguration(DBStationsConfiguration dbStationsConfiguration) {
+        this.dbStationsConfiguration = dbStationsConfiguration;
+    }
+
     @Override
     @Bean
     public RestHighLevelClient elasticsearchClient() {
 
-        final ClientConfiguration clientConfiguration = ClientConfiguration.builder() //
-            .connectedTo("localhost:9200") //
-            .withProxy("localhost:8888")
-//            .withPathPrefix("ela")
-            // .usingSsl(NotVerifyingSSLContext.getSslContext()) //
-            // .withBasicAuth("elastic", "stHfzUWETvvX9aAacSTW") //
+        ClientConfiguration.TerminalClientConfigurationBuilder builder = ClientConfiguration.builder()
+            .connectedTo(dbStationsConfiguration.getElasticSearchHost());
+
+        if (StringUtils.hasLength(dbStationsConfiguration.getElasticSearchProxy())) {
+            builder = builder.withProxy(dbStationsConfiguration.getElasticSearchProxy());
+        }
+
+        final ClientConfiguration clientConfiguration = builder
             .withSocketTimeout(Duration.ofSeconds(60)) //
             .build();
 

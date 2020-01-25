@@ -15,6 +15,7 @@
 */
 package com.sothawo.dbstations;
 
+import com.sothawo.mapjfx.Configuration;
 import com.sothawo.mapjfx.Coordinate;
 import com.sothawo.mapjfx.Extent;
 import com.sothawo.mapjfx.MapLabel;
@@ -22,7 +23,10 @@ import com.sothawo.mapjfx.MapType;
 import com.sothawo.mapjfx.MapView;
 import com.sothawo.mapjfx.Marker;
 import com.sothawo.mapjfx.event.MapViewEvent;
+import io.reactivex.rxjavafx.observables.JavaFxObservable;
+import io.reactivex.rxjavafx.schedulers.JavaFxScheduler;
 import javafx.fxml.FXML;
+import javafx.scene.control.Label;
 import net.rgielen.fxweaver.core.FxmlView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +39,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author P.J. Meisch (pj.meisch@sothawo.com)
@@ -52,18 +57,20 @@ public class MainController {
     private final DBStationsConfiguration configuration;
     private final DBStationRepository repository;
 
-    private final List<MapLabel> labelsRight = new ArrayList<>();
-    private final Marker markerRight = Marker.createProvided(Marker.Provided.GREEN);
+    private final List<MapLabel> labelsMaster = new ArrayList<>();
+    private final Marker markerMaster = Marker.createProvided(Marker.Provided.GREEN);
 
-    private final List<MapLabel> labelsLeft = new ArrayList<>();
-
-    private final AtomicBoolean updatingMapLeft = new AtomicBoolean(false);
-
-    @FXML
-    private MapView mapViewLeft;
+    private Extent extentSlave;
+    private final List<MapLabelSlave> labelsSlave = new ArrayList<>();
 
     @FXML
-    private MapView mapViewRight;
+    private MapView mapViewSlave;
+    @FXML
+    private MapView mapViewMaster;
+    @FXML
+    private Label labelMaster;
+    @FXML
+    private Label labelSlave;
 
     public MainController(DBStationsConfiguration configuration, DBStationRepository repository) {
         this.configuration = configuration;
@@ -72,80 +79,73 @@ public class MainController {
 
     @FXML
     public void initialize() {
-        initMapViewLeft();
-        initMapViewRight();
+        initMapViewSlave();
+        initMapViewMaster();
     }
 
-    private void initMapViewLeft() {
+    private void initMapViewMaster() {
         MapType mapType = MapType.OSM;
         if (configuration.getBingMapsApiKey() != null) {
-            mapViewLeft.setBingMapsApiKey(configuration.getBingMapsApiKey());
-            mapType = MapType.BINGMAPS_CANVAS_GRAY;
-        }
-        init(mapViewLeft, mapType);
-
-        mapViewLeft.addEventHandler(MapViewEvent.MAP_BOUNDING_EXTENT, event -> {
-            event.consume();
-
-            if (mapViewLeft.getInitialized() && !updatingMapLeft.getAndSet(true)) {
-                Extent extent = event.getExtent();
-                LOG.debug("extent: {}", extent);
-
-                GeoBox geoBox = new GeoBox(new GeoPoint(extent.getMax().getLatitude(), extent.getMin().getLongitude()),
-                    new GeoPoint(extent.getMin().getLatitude(), extent.getMax().getLongitude()));
-
-                SearchHits<DBStation> searchHits = null;
-                try {
-                    searchHits = repository.searchByLocationNear(geoBox);
-                } catch (Throwable t) {
-                    LOG.error("OOPS", t);
-                }
-
-                displaySearchHitsInMapLeft(searchHits);
-                updatingMapLeft.set(false);
-            }
-        });
-    }
-
-    private void initMapViewRight() {
-        MapType mapType = MapType.OSM;
-        if (configuration.getBingMapsApiKey() != null) {
-            mapViewRight.setBingMapsApiKey(configuration.getBingMapsApiKey());
+            mapViewMaster.setBingMapsApiKey(configuration.getBingMapsApiKey());
             mapType = MapType.BINGMAPS_ROAD;
         }
 
-        init(mapViewRight, mapType);
-        markerRight.setVisible(false);
+        initMap(mapViewMaster, mapType, Configuration.builder().build());
+        markerMaster.setVisible(false);
 
-        mapViewRight.addEventHandler(MapViewEvent.MAP_CLICKED, event -> {
+        mapViewMaster.addEventHandler(MapViewEvent.MAP_CLICKED, event -> {
             event.consume();
 
-            if (mapViewRight.getInitialized()) {
+            if (mapViewMaster.getInitialized()) {
 
                 Coordinate newPosition = event.getCoordinate().normalize();
-                markerRight.setPosition(newPosition);
-                mapViewRight.setCenter(newPosition);
-                mapViewLeft.setCenter(newPosition);
-                if (!markerRight.getVisible()) {
-                    mapViewRight.addMarker(markerRight);
-                    markerRight.setVisible(true);
+                markerMaster.setPosition(newPosition);
+                if (!markerMaster.getVisible()) {
+                    mapViewMaster.addMarker(markerMaster);
+                    markerMaster.setVisible(true);
                 }
+                labelMaster.textProperty().set(newPosition.toString());
 
                 GeoPoint geoPoint = new GeoPoint(newPosition.getLatitude(), newPosition.getLongitude());
-
                 SearchHits<DBStation> searchHits = repository.searchTop5By(Sort.by(new GeoDistanceOrder("location", geoPoint).withUnit("km")));
+                displaySearchHitsInMapMaster(searchHits);
 
-                displaySearchHitsInMapRight(searchHits);
-
-                double zoom = mapViewRight.getZoom();
-                mapViewLeft.setZoom(zoom);
-                mapViewRight.setZoom(zoom);
+                syncSlave();
             }
+        });
+        mapViewMaster.addEventHandler(MapViewEvent.MAP_BOUNDING_EXTENT, event -> {
+            syncSlave();
         });
     }
 
-    private void init(MapView mapView, MapType mapType) {
-        mapView.setAnimationDuration(500);
+    private void syncSlave() {
+        Coordinate center = mapViewMaster.getCenter();
+        mapViewSlave.setCenter(center);
+        double zoom = mapViewMaster.getZoom();
+        mapViewSlave.setZoom(zoom);
+        mapViewMaster.setZoom(zoom);
+    }
+
+    private void initMapViewSlave() {
+        MapType mapType = MapType.OSM;
+        if (configuration.getBingMapsApiKey() != null) {
+            mapViewSlave.setBingMapsApiKey(configuration.getBingMapsApiKey());
+            mapType = MapType.BINGMAPS_CANVAS_GRAY;
+        }
+        initMap(mapViewSlave, mapType, Configuration.builder().interactive(false).showZoomControls(false).build());
+
+        JavaFxObservable.eventsOf(mapViewSlave, MapViewEvent.MAP_BOUNDING_EXTENT)
+            .debounce(250, TimeUnit.MILLISECONDS)
+            .observeOn(JavaFxScheduler.platform())
+            .subscribe(event -> {
+                event.consume();
+                extentSlave = event.getExtent();
+                updateMapSlave();
+            });
+    }
+
+    private void initMap(MapView mapView, MapType mapType, Configuration mapConfiguration) {
+        mapView.setAnimationDuration(100);
         mapView.setCustomMapviewCssURL(getClass().getResource("/dbstations.css"));
         mapView.initializedProperty().addListener((observable, oldValue, newValue) -> {
             if (newValue) {
@@ -154,38 +154,85 @@ public class MainController {
             }
         });
         mapView.setMapType(mapType);
-        mapView.initialize();
+        mapView.initialize(mapConfiguration);
     }
 
-    private void displaySearchHitsInMapLeft(SearchHits<DBStation> searchHits) {
-        labelsLeft.forEach(mapViewLeft::removeLabel);
-        labelsLeft.clear();
+    private void updateMapSlave() {
+        if (mapViewSlave.getInitialized()) {
 
-        if (searchHits != null) {
-            searchHits.forEach(searchHit -> {
-                DBStation dbStation = searchHit.getContent();
-                MapLabel mapLabel = new MapLabel("O");
-                mapLabel.setPosition(new Coordinate(dbStation.getLocation().getLat(), dbStation.getLocation().getLon()));
-                mapLabel.setCssClass(dbStation.getType());
-                mapViewLeft.addLabel(mapLabel);
-                labelsLeft.add(mapLabel);
-            });
-            labelsLeft.forEach(mapViewLeft::addLabel);
-            labelsLeft.forEach(mapLabel -> mapLabel.setVisible(true));
+            GeoBox geoBox = new GeoBox(new GeoPoint(extentSlave.getMax().getLatitude(), extentSlave.getMin().getLongitude()),
+                new GeoPoint(extentSlave.getMin().getLatitude(), extentSlave.getMax().getLongitude()));
+
+            SearchHits<DBStation> searchHits = null;
+            try {
+                searchHits = repository.searchByLocationNear(geoBox);
+            } catch (Throwable t) {
+                LOG.error("OOPS", t);
+            }
+
+            displaySearchHitsInMapSlave(searchHits);
         }
     }
 
-    private void displaySearchHitsInMapRight(SearchHits<DBStation> searchHits) {
-        labelsRight.forEach(mapViewRight::removeLabel);
-        labelsRight.clear();
+    private void displaySearchHitsInMapSlave(SearchHits<DBStation> searchHits) {
+
+        List<MapLabelSlave> newLabels = new ArrayList<>();
+
+        if (searchHits != null) {
+            AtomicInteger numFV = new AtomicInteger();
+            AtomicInteger numRV = new AtomicInteger();
+            AtomicInteger numDPN = new AtomicInteger();
+
+            labelSlave.textProperty().set("Updating...");
+            LOG.debug("updating slave map");
+            searchHits.forEach(searchHit -> {
+                DBStation dbStation = searchHit.getContent();
+                MapLabelSlave mapLabel = new MapLabelSlave(dbStation.getId().toString(), "&nbsp;");
+                mapLabel.setPosition(new Coordinate(dbStation.getLocation().getLat(), dbStation.getLocation().getLon()));
+                mapLabel.setCssClass(dbStation.getType());
+
+                newLabels.add(mapLabel);
+
+                if (labelsSlave.contains(mapLabel)) {
+                    labelsSlave.remove(mapLabel);
+                } else {
+                    mapViewSlave.addLabel(mapLabel);
+                }
+
+                switch (dbStation.getType()) {
+                    case "FV":
+                        numFV.getAndIncrement();
+                        break;
+                    case "RV":
+                        numRV.getAndIncrement();
+                        break;
+                    case "DPN":
+                        numDPN.getAndIncrement();
+                        break;
+                }
+            });
+
+            labelsSlave.forEach(mapViewSlave::removeLabel);
+            labelsSlave.clear();
+            labelsSlave.addAll(newLabels);
+
+            labelsSlave.forEach(mapLabel -> mapLabel.setVisible(true));
+            labelSlave.textProperty().set(String.format("FV: %d, RV: %d, DPN: %d", numFV.get(), numRV.get(), numDPN.get()));
+            LOG.debug("finished updating slave map");
+        }
+    }
+
+    private void displaySearchHitsInMapMaster(SearchHits<DBStation> searchHits) {
+        labelsMaster.forEach(mapViewMaster::removeLabel);
+        labelsMaster.clear();
         searchHits.forEach(searchHit -> {
             DBStation dbStation = searchHit.getContent();
             MapLabel mapLabel = new MapLabel(String.format("%1$3.1f km - %2$s", searchHit.getSortValues().get(0), dbStation.getName()));
             mapLabel.setPosition(new Coordinate(dbStation.getLocation().getLat(), dbStation.getLocation().getLon()));
             mapLabel.setCssClass(dbStation.getType());
             mapLabel.setVisible(true);
-            mapViewRight.addLabel(mapLabel);
-            labelsRight.add(mapLabel);
+            mapViewMaster.addLabel(mapLabel);
+            labelsMaster.add(mapLabel);
         });
     }
 }

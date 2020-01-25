@@ -24,7 +24,30 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConfigurationProperties(prefix = "com.sothawo.dbstations")
 public class DBStationsConfiguration {
+    /** host:port of the Elastcisearch cluster */
+    private String elasticSearchHost;
+
+    /** host:port of a proxy to use */
+    private String elasticSearchProxy;
+
+    /** Bing Maps API key */
     private String bingMapsApiKey = null;
+
+    public String getElasticSearchHost() {
+        return elasticSearchHost;
+    }
+
+    public void setElasticSearchHost(String elasticSearchHost) {
+        this.elasticSearchHost = elasticSearchHost;
+    }
+
+    public String getElasticSearchProxy() {
+        return elasticSearchProxy;
+    }
+
+    public void setElasticSearchProxy(String elasticSearchProxy) {
+        this.elasticSearchProxy = elasticSearchProxy;
+    }
 
     public String getBingMapsApiKey() {
         return bingMapsApiKey;

@@ -1,10 +1,15 @@
+com:
+  sothawo:
+    dbstations:
+      elasticsearchHost: "localhost:9200"
+      elasticsearchProxy: "localhost:8888"
 
 logging.level:
-    root: warn
-    com.sothawo:
-        mapjfx: warn
-        dbstations: debug
-    org.springframework:
-        data: debug
-        data.elasticsearch: debug
-        elasticsearch.client.WIRE: trace
+  root: warn
+  com.sothawo:
+    mapjfx: warn
+    dbstations: debug
+  org.springframework:
+    data: debug
+    data.elasticsearch: debug
+    elasticsearch.client.WIRE: trace

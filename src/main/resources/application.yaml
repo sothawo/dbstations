@@ -2,7 +2,7 @@ com:
   sothawo:
     dbstations:
       elasticsearchHost: "localhost:9200"
-      elasticsearchProxy: "localhost:8888"
+#      elasticsearchProxy: "localhost:8888"
 
 logging.level:
   root: warn
